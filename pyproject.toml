@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "name-analysis"
+version = "0.1.0"
+description = ""
+authors = ["François Weber <francois.weber.commeercial@gmx.fr>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+streamlit = "^1.35.0"
+matplotlib = "^3.9.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
