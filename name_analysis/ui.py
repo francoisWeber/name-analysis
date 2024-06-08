@@ -6,6 +6,7 @@ from unidecode import unidecode
 from pydantic import BaseModel
 import name_analysis.streamlit_pydantic as sp
 from enum import IntEnum
+import numpy as np
 
 st.title("Historique des prénoms depuis 1900")
 
@@ -18,6 +19,11 @@ if "df" not in st.session_state:
 if "df_tot" not in st.session_state:
     df_tot = df.groupby(["sexe", "annee"]).agg({"nombre": "sum"}).reset_index()
     st.session_state["df_tot"] = df_tot
+    
+# TODO: make this happen only once
+df_tot = st.session_state.df_tot
+df_tot_1 = df_tot[df_tot.sexe == 1].set_index("annee")[["nombre"]]
+df_tot_2 = df_tot[df_tot.sexe == 2].set_index("annee")[["nombre"]]
 
 if "nb_names" not in st.session_state:
     st.session_state["nb_names"] = 1
@@ -25,24 +31,27 @@ if "nb_names" not in st.session_state:
 
 def incr_name_list():
     st.session_state.nb_names += 1
+    
+def normalize(name: str) -> str:
+    return unidecode(name).upper()
 
 class SexEnum(IntEnum):
     male = 1
     female = 2
 
-class Name(BaseModel):
-    name: str = "Jean-Eude"
+class NameInfo(BaseModel):
+    name: str = ""
     sex: SexEnum
     anno: int = 0
     
 
-names = []
+names_infos: List[NameInfo] = []
 
 for i in range(st.session_state.nb_names):
     cols = st.columns([10, 1])
     with cols[0]:
-        datum = sp.pydantic_fields(key=f"my_form{i}", model=Name)
-        names.append(datum)
+        datum = sp.pydantic_fields(key=f"my_form{i}", model=NameInfo)
+        names_infos.append(datum)
     # with cols[1]:
     #     st.button(":heavy_minus_sign:", on_click=incr_name_list, key=f"minus{i}", args=(i))
         
@@ -52,24 +61,27 @@ st.button(":heavy_plus_sign:", on_click=incr_name_list)
 df = st.session_state.df
 df_tot = st.session_state.df_tot
 
-if len(names):
-    fig, _ = plt.subplots(figsize=(7, 4))
-    for _name in names:
-        name = _name["name"]
-        sexe = _name["sex"]
-        anno = _name["anno"]
-        name_upper = unidecode(name).upper()
-        a = df[df.prenom == name_upper].set_index("annee")[["nombre"]].sort_index()
-        b = df_tot[df_tot.sexe == sexe].set_index("annee")[["nombre"]]
-        c = a.join(b, rsuffix="_tot", how="inner").sort_index()
-        serie = c.nombre / c.nombre_tot * 100
-        serie.plot(label=name)
-        anno = anno if anno > 0 else 2022
-        if anno in serie:
-            plt.scatter(x=[anno], y=[serie[anno]], s=70)
-    plt.yscale("linear") #  "log", "symlog", "logit
-    plt.grid()
-    plt.legend()
+sex2emoji = {
+    1: "♂",
+    2: "♀",
+}
 
-    st.pyplot(fig)
+if len(names_infos):
+    for name_info in names_infos:
+        name = name_info["name"]
+        name_norm = normalize(name)
+        name += " " + sex2emoji[name_info["sex"]]
+        name_df = df[np.logical_and(df.prenom == name_norm, df.sexe == name_info["sex"])][["annee", "nombre"]].rename(columns={"nombre": name})
+        if name_info["sex"] == 1:
+            df_tot_1 = df_tot_1.join(other=name_df.set_index(["annee"]), how="left")
+        if name_info["sex"] == 2:
+            df_tot_2 = df_tot_2.join(other=name_df.set_index(["annee"]), how="left")
+
+    df_1 = df_tot_1.apply(lambda c: c/c.nombre*100, axis=1).drop(columns="nombre")
+    df_2 = df_tot_2.apply(lambda c: c/c.nombre*100, axis=1).drop(columns="nombre")
+
+    final_df = df_1.join(df_2)
+    st.markdown("**Historique des proportions d'enfants par noms de naissance et par sexe**")
+    st.line_chart(data=final_df)
+
     
